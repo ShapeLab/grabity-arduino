@@ -1,10 +1,12 @@
 // Simple DAC wave test on Teensy 3.1
 #include "waves.h"
 #include "output.h"
+#include "ui.h"
 
 int phaseIndex = 0;
 elapsedMicros usec = 0;
 
+// Default values
 float vcAmplitude = 0.5;  // 1.0
 float vcFrequency = 40.0; // 40.0
 float plateauProportion = 0.30;
@@ -53,44 +55,6 @@ void setup() {
 
   // encoder pin on interrupt 1 (pin 3)
   attachInterrupt(23, doEncoderB, CHANGE);
-}
-
-void printSignalStatus(float plateauProportion, float vcAmplitude, float vcFrequency, bool symmetricVibration, bool inverseVibration) {
-  Serial.println();
-  //Serial.println("PP\tAMP\tFREQ");
-
-  if (symmetricVibration) {
-    Serial.print("SYM");
-  }
-  else {
-    Serial.print("-");
-  }
-  Serial.print("\t");
-  if (inverseVibration) {
-    Serial.print("INV");
-  }
-  else {
-    Serial.print("-");
-  }
-  Serial.print("\t");
-  if (torqueL) {
-    Serial.print("TQL");
-  }
-  else if (torqueR) {
-    Serial.print("TQR");
-  }
-  else {
-    Serial.print("-");
-  }
-  Serial.println();
-  Serial.println("PP\tAMP\tFREQ");
-  Serial.print(plateauProportion);
-  Serial.print("\t");
-  Serial.print(vcAmplitude);
-  Serial.print("\t");
-  Serial.print(vcFrequency);
-  Serial.println();
-  //Serial.println("+4 -1\t+5 -2\t+6 -3");
 }
 
 void loop() {
@@ -147,7 +111,7 @@ void loop() {
         default:
           continue;
       };
-      printSignalStatus(plateauProportion, vcAmplitude, vcFrequency, symmetricVibration, inverseVibration);
+      printSignalStatus(plateauProportion, vcAmplitude, vcFrequency, symmetricVibration, inverseVibration, torqueL, torqueR);
     }
   }
   int waveformSegmentLength = (1000000 / (vcFrequency * WAVEFORM_RESOLUTION));
