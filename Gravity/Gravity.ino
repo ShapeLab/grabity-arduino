@@ -7,7 +7,7 @@ int phaseIndex = 0;
 elapsedMicros usec = 0;
 
 // Default values
-float vcAmplitude = 0.5;  // 1.0
+float vcAmplitude = 0.1;  // 1.0
 float vcFrequency = 40.0; // 40.0
 float plateauProportion = 0.30;
 
@@ -30,9 +30,36 @@ int motorPin = 10;
 volatile long encoder0Pos = 0;
 int count = 0;
 long printPos = 0;
+bool toLock = false;
+
+String serialReceptionString = "";
+
+// http://stackoverflow.com/questions/9072320/split-string-into-string-array
+String splitString(String data, char separator, int index)
+{
+  int found = 0;
+  int strIndex[] = {0, -1};
+  int maxIndex = data.length()-1;
+
+  for(int i=0; i<=maxIndex && found<=index; i++){
+    if(data.charAt(i)==separator || i==maxIndex){
+        found++;
+        strIndex[0] = strIndex[1]+1;
+        strIndex[1] = (i == maxIndex) ? i+1 : i;
+    }
+  }
+
+  return found>index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+float encoderToGraspDistance(long encoder) {
+  return 130.0 + 2.34*encoder;
+}
 
 void setup() {
   Serial.begin(19200);
+  serialReceptionString.reserve(200);
+  
   delay(2000);
 
   analogWriteResolution(12);
@@ -66,62 +93,17 @@ void loop() {
   // handle all the characters sent over serial
   if (phaseIndex >= WAVEFORM_RESOLUTION) {
     phaseIndex = 0;
-    while (Serial.available()) {
-      char readChar = Serial.read();
-      switch (readChar) {
-        // PLATEAU PROPORTION
-        case '4':
-          plateauProportion += PLATEAU_RESOLUTION;
-          if (plateauProportion > PLATEAU_MAX) plateauProportion = PLATEAU_MAX;
-          break;
-        case '1':
-          plateauProportion -= PLATEAU_RESOLUTION;
-          if (plateauProportion < PLATEAU_MIN) plateauProportion = PLATEAU_MIN;
-          break;
-        // AMPLITUDE
-        case '5':
-          vcAmplitude += AMPLITUDE_RESOLUTION;
-          if (vcAmplitude > AMPLITUDE_MAX) vcAmplitude = AMPLITUDE_MAX;
-          break;
-        case '2':
-          vcAmplitude -= AMPLITUDE_RESOLUTION;
-          if (vcAmplitude < AMPLITUDE_MIN) vcAmplitude = AMPLITUDE_MIN;
-          break;
-        // FREQUENCY
-        case '6':
-          vcFrequency += FREQUENCY_RESOLUTION;
-          if (vcFrequency > FREQUENCY_MAX) vcFrequency = FREQUENCY_MAX;
-          break;
-        case '3':
-          vcFrequency -= FREQUENCY_RESOLUTION;
-          if (vcFrequency < FREQUENCY_MIN) vcFrequency = FREQUENCY_MIN;
-          break;
-        case '0':
-          symmetricVibration = !symmetricVibration;
-          break;
-        case '7':
-          inverseVibration = !inverseVibration;
-          break;
-        case '8':
-          torqueL = !torqueL;
-          break;
-        case '9':
-          torqueR = !torqueR;
-          break;
-        default:
-          continue;
-      };
-      printSignalStatus(plateauProportion, vcAmplitude, vcFrequency, symmetricVibration, inverseVibration, torqueL, torqueR);
-    }
   }
-  unsigned int waveformSegmentLength = (1000000 / (vcFrequency * WAVEFORM_RESOLUTION));
-  while (usec < waveformSegmentLength) {
-    ; // nothing is on this line except a semicolon and comment. it's a spin lock
+  
+  /****Encoder****/
+  if ((count & 0b11111111) == 0)
+  {
+    printPos = encoder0Pos;
+    Serial.println (encoderToGraspDistance(printPos), DEC);
   }
-  usec = usec - waveformSegmentLength;
 
   /****Brake****/
-  if (printPos < -10 && (millis() > nextBrakeTriggerTime))
+  if (toLock && (millis() > nextBrakeTriggerTime))
   {
     digitalWrite(motorPin, HIGH);
     motorLowTriggerTime = 150 + millis();
@@ -129,24 +111,42 @@ void loop() {
     nextBrakeTriggerTime = 1000 + millis();
   }
 
-  /****Encoder****/
-  if ((count % 100) == 0)
-  { printPos = encoder0Pos;
-    Serial.println (printPos, DEC);
-  }
-
   // millis trigger for the motor that drives the brake. Designed to avoid issues with delay()ing too long.
-  if ((count % 100) == 0) {
-    Serial.println("Checking motor trigger....");
-    Serial.println(motorLowIsScheduled);
-    Serial.println(millis());
-    Serial.println(motorLowTriggerTime);
+  if ((count & 0b1111111) == 0) {
     if (motorLowIsScheduled && (millis() > motorLowTriggerTime)) {
       digitalWrite(motorPin, LOW);
       motorLowIsScheduled = false;
-      Serial.println("---Writing MotorPin low---");
     }
   }
+  
+  while (Serial.available()) {
+    char readChar = Serial.read();
+    if (readChar == '\n') {
+      // process the full string: it is of the form forceL<tab>forceR<tab>distance
+
+      float forceL = splitString(serialReceptionString, '\t', 0).toFloat();
+      float forceR = splitString(serialReceptionString, '\t', 1).toFloat();
+      float gripperForce = splitString(serialReceptionString, '\t', 2).toFloat();
+
+      toLock = gripperForce > 0.0;
+
+      float amp = -forceL / 5.0; // negative because
+
+      vcAmplitude = amp > 1.0 ? 1.0 : (amp < -1.0 ? -1.0 : amp); // it's semi-difficult to go past this.
+
+      serialReceptionString = "";
+    }
+    else {
+      // add the character, wait for the newline to change everything.
+      serialReceptionString += readChar;
+    }
+  }
+
+  unsigned int waveformSegmentLength = (1000000 / (vcFrequency * WAVEFORM_RESOLUTION));
+  while (usec < waveformSegmentLength) {
+    ; // nothing is on this line except a semicolon and comment. it's a spin lock
+  }
+  usec = usec - waveformSegmentLength;
   
   count++;
 }
