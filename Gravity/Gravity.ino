@@ -19,9 +19,9 @@ bool torqueR = false;
 int offsetPin1 = 37;
 int offsetPin2 = 38;
 
-long nextBrakeTriggerTime = 0;
+unsigned long nextBrakeTriggerTime = 0;
 bool motorLowIsScheduled = false;
-long motorLowTriggerTime = 0;
+unsigned long motorLowTriggerTime = 0;
 
 int motorPin = 10;
 
@@ -114,7 +114,7 @@ void loop() {
       printSignalStatus(plateauProportion, vcAmplitude, vcFrequency, symmetricVibration, inverseVibration, torqueL, torqueR);
     }
   }
-  int waveformSegmentLength = (1000000 / (vcFrequency * WAVEFORM_RESOLUTION));
+  unsigned int waveformSegmentLength = (1000000 / (vcFrequency * WAVEFORM_RESOLUTION));
   while (usec < waveformSegmentLength) {
     ; // nothing is on this line except a semicolon and comment. it's a spin lock
   }
